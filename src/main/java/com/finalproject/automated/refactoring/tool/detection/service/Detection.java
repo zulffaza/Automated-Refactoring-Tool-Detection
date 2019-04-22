@@ -1,7 +1,7 @@
 package com.finalproject.automated.refactoring.tool.detection.service;
 
 import com.finalproject.automated.refactoring.tool.model.MethodModel;
-import org.springframework.lang.NonNull;
+import lombok.NonNull;
 
 import java.util.List;
 import java.util.Map;
@@ -16,5 +16,5 @@ public interface Detection {
 
     Map<String, List<MethodModel>> detect(@NonNull String path);
 
-    Map<String, List<MethodModel>> detect(@NonNull List<String> paths);
+    Map<String, Map<String, List<MethodModel>>> detect(@NonNull List<String> paths);
 }

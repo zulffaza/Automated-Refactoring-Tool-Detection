@@ -6,11 +6,11 @@ import com.finalproject.automated.refactoring.tool.files.detection.model.FileMod
 import com.finalproject.automated.refactoring.tool.files.detection.service.FilesDetection;
 import com.finalproject.automated.refactoring.tool.methods.detection.service.MethodsDetection;
 import com.finalproject.automated.refactoring.tool.model.MethodModel;
+import lombok.NonNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -38,23 +38,21 @@ public class DetectionImpl implements Detection {
     private String mimeType;
 
     @Override
-    public Map<String, List<MethodModel>> detect(String path) {
-        return detect(Collections.singletonList(path));
+    public Map<String, List<MethodModel>> detect(@NonNull String path) {
+        return detect(Collections.singletonList(path))
+                .get(path);
     }
 
     @Override
-    public Map<String, List<MethodModel>> detect(List<String> paths) {
+    public Map<String, Map<String, List<MethodModel>>> detect(@NonNull List<String> paths) {
         return filesDetection.detect(paths, mimeType)
-                .values()
+                .entrySet()
                 .parallelStream()
-                .map(this::detectMethods)
-                .map(Map::entrySet)
-                .flatMap(Collection::parallelStream)
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, this::mergeList));
+                .collect(Collectors.toMap(Map.Entry::getKey, this::detectMethods));
     }
 
-    private Map<String, List<MethodModel>> detectMethods(List<FileModel> fileModels) {
-        Map<String, List<MethodModel>> methods = methodsDetection.detect(fileModels);
+    private Map<String, List<MethodModel>> detectMethods(Map.Entry<String, List<FileModel>> entry) {
+        Map<String, List<MethodModel>> methods = methodsDetection.detect(entry.getValue());
         methods.forEach(this::detectCodeSmells);
 
         return methods;
@@ -62,10 +60,5 @@ public class DetectionImpl implements Detection {
 
     private void detectCodeSmells(String filename, List<MethodModel> methods) {
         codeSmellsDetection.detect(methods);
-    }
-
-    private List<MethodModel> mergeList(List<MethodModel> methodModels, List<MethodModel> nextMethodModels) {
-        methodModels.addAll(nextMethodModels);
-        return methodModels;
     }
 }

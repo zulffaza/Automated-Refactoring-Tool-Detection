@@ -1,18 +1,34 @@
 package com.finalproject.automated.refactoring.tool.detection.service.implementation;
 
+import com.finalproject.automated.refactoring.tool.code.smells.detection.service.CodeSmellsDetection;
 import com.finalproject.automated.refactoring.tool.detection.service.Detection;
-import com.finalproject.automated.refactoring.tool.model.CodeSmellName;
+import com.finalproject.automated.refactoring.tool.files.detection.model.FileModel;
+import com.finalproject.automated.refactoring.tool.files.detection.service.FilesDetection;
+import com.finalproject.automated.refactoring.tool.methods.detection.service.MethodsDetection;
+import com.finalproject.automated.refactoring.tool.model.BlockModel;
 import com.finalproject.automated.refactoring.tool.model.MethodModel;
 import com.finalproject.automated.refactoring.tool.model.PropertyModel;
+import com.finalproject.automated.refactoring.tool.model.StatementModel;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.junit4.SpringRunner;
 
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+
+import static org.junit.Assert.assertEquals;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
 
 @RunWith(SpringRunner.class)
 @SpringBootTest
@@ -21,122 +37,243 @@ public class DetectionImplTest {
     @Autowired
     private Detection detection;
 
+    @MockBean
+    private FilesDetection filesDetection;
+
+    @MockBean
+    private MethodsDetection methodsDetection;
+
+    @MockBean
+    private CodeSmellsDetection codeSmellsDetection;
+
+    @Value("${files.mime.type}")
+    private String mimeType;
+
     private static final Integer FIRST_INDEX = 0;
-    private static final Integer ONE = 1;
+    private static final Integer INVOKED_ONCE = 1;
+
+    private static final String FILENAME = "Filename.java";
+
+    private List<String> paths;
+
+    @Before
+    public void setUp() {
+        paths = Collections.singletonList("path");
+
+        when(filesDetection.detect(eq(paths), eq(mimeType)))
+                .thenReturn(createFilesDetectionReturn());
+        when(methodsDetection.detect(eq(createFileModels())))
+                .thenReturn(createMethodsDetectionReturn());
+        doNothing().when(codeSmellsDetection)
+                .detect(eq(createMethodModels()));
+    }
 
     @Test
-    public void test() {
-        Map<String, List<MethodModel>> result = detection.detect("C:\\Users\\Faza Zulfika\\Documents\\Backend-Future-Phase-2");
-        doPrintMethodInformation(result);
+    public void detect_singlePath_success() {
+        Map<String, List<MethodModel>> result = detection.detect(paths.get(FIRST_INDEX));
+        assertEquals(createExpectedResult().get(paths.get(FIRST_INDEX)), result);
+
+        verifyFilesDetection();
+        verifyMethodsDetection();
+        verifyCodeSmellsDetection();
     }
 
-    private void doPrintMethodInformation(Map<String, List<MethodModel>> methods) {
-        Long methodsCount = methods.values()
-                .stream()
-                .mapToLong(List::size)
-                .sum();
+    @Test
+    public void detect_multiPath_success() {
+        Map<String, Map<String, List<MethodModel>>> result = detection.detect(paths);
+        assertEquals(createExpectedResult(), result);
 
-        System.out.println("Class has methods -> " + methods.size());
-        System.out.println("Methods size -> " + methodsCount);
-        System.out.println();
-
-        methods.values()
-                .forEach(methodModels -> methodModels.forEach(this::doPrintMethod));
+        verifyFilesDetection();
+        verifyMethodsDetection();
+        verifyCodeSmellsDetection();
     }
 
-    private void doPrintMethod(MethodModel methodModel) {
-        doPrintWithSpace("Method -->");
-        doPrintMethodKeywords(methodModel);
-        doPrintMethodReturnType(methodModel);
-
-        System.out.print(methodModel.getName());
-        System.out.print("(");
-
-        doPrintMethodParameters(methodModel);
-        doPrintWithSpace(")");
-
-        doPrintMethodExceptions(methodModel);
-        doPrintMethodLOC(methodModel);
-        doPrintMethodCodeSmells(methodModel);
-
-        System.out.println();
+    @Test(expected = NullPointerException.class)
+    public void detect_singlePath_failed_pathIsNull() {
+        String path = null;
+        detection.detect(path);
     }
 
-    private void doPrintMethodKeywords(MethodModel methodModel) {
-        methodModel.getKeywords()
-                .forEach(this::doPrintWithSpace);
+    @Test(expected = NullPointerException.class)
+    public void detect_multiPath_failed_pathIsNull() {
+        List<String> paths = null;
+        detection.detect(paths);
     }
 
-    private void doPrintMethodReturnType(MethodModel methodModel) {
-        if (isHasReturnType(methodModel))
-            doPrintWithSpace(methodModel.getReturnType());
+    private Map<String, List<FileModel>> createFilesDetectionReturn() {
+        Map<String, List<FileModel>> result = new HashMap<>();
+        result.put(paths.get(FIRST_INDEX), createFileModels());
+
+        return result;
     }
 
-    private Boolean isHasReturnType(MethodModel methodModel) {
-        Optional<String> returnType = Optional.ofNullable(methodModel.getReturnType());
-        return returnType.isPresent() && !returnType.get().isEmpty();
+    private List<FileModel> createFileModels() {
+        return Collections.singletonList(createFileModel());
     }
 
-    private void doPrintMethodParameters(MethodModel methodModel) {
-        Integer maxSize = methodModel.getParameters().size() - ONE;
-
-        for (Integer index = FIRST_INDEX; index < methodModel.getParameters().size(); index++)
-            doPrintMethodParameter(methodModel.getParameters().get(index), index, maxSize);
+    private FileModel createFileModel() {
+        return FileModel.builder()
+                .path(paths.get(FIRST_INDEX))
+                .filename(FILENAME)
+                .content(createFileContent())
+                .build();
     }
 
-    private void doPrintMethodParameter(PropertyModel propertyModel, Integer index, Integer maxSize) {
-        System.out.print(propertyModel.getType() + " " + propertyModel.getName());
-        doPrintCommaSeparator(index, maxSize);
+    private static String createFileContent() {
+        return "package path;\n" +
+                "\n" +
+                "import java.io.Serializable;\n" +
+                "\n" +
+                "public class Filename implements Serializable {\n" +
+                "\n" +
+                "    @GetMapping(\n" +
+                "               value = \"/{filename}/change\",\n" +
+                "               produces = MediaType.APPLICATION_JSON_VALUE\n" +
+                "    )\n" +
+                "    @SuppressWarnings()\n" +
+                "    public Response<String, String> changeFilename(@RequestParam(required = false, defaultValue = \"null\") String name,\n" +
+                "                                              @RequestParam(required = false, defaultValue = \".java\") String extension,\n" +
+                "                                              @RequestParam(required = false) String user) throws Exception, IOException {\n" +
+                "        try {\n" +
+                "            return user + \"-\" + name + extension;\n" +
+                "        } catch (NullPointerException e) {\n" +
+                "            return null;\n" +
+                "        }\n" +
+                "    }\n" +
+                "}";
     }
 
-    private void doPrintMethodExceptions(MethodModel methodModel) {
-        Integer maxSize = methodModel.getExceptions().size() - ONE;
+    private Map<String, List<MethodModel>> createMethodsDetectionReturn() {
+        String key = paths.get(FIRST_INDEX) + File.separator + FILENAME;
 
-        if (!methodModel.getExceptions().isEmpty())
-            doPrintWithSpace("throws");
+        Map<String, List<MethodModel>> result = new HashMap<>();
+        result.put(key, createMethodModels());
 
-        for (Integer index = FIRST_INDEX; index < methodModel.getExceptions().size(); index++)
-            doPrintMethodException(methodModel.getExceptions().get(index), index, maxSize);
+        return result;
     }
 
-    private void doPrintMethodException(String exception, Integer index, Integer maxSize) {
-        System.out.print(exception);
-        doPrintCommaSeparator(index, maxSize);
+    private List<MethodModel> createMethodModels() {
+        return Collections.singletonList(createMethodModel());
     }
 
-    private void doPrintCommaSeparator(Integer index, Integer maxSize) {
-        if (!index.equals(maxSize))
-            doPrintWithSpace(",");
+    private MethodModel createMethodModel() {
+        return MethodModel.builder()
+                .keywords(Arrays.asList(
+                        "@GetMapping( value = \"/{filename}/change\", produces = MediaType.APPLICATION_JSON_VALUE )",
+                        "@SuppressWarnings()",
+                        "public"))
+                .returnType("Response<String, String>")
+                .name("changeFilename")
+                .parameters(Arrays.asList(
+                        PropertyModel.builder()
+                                .keywords(Collections.singletonList("@RequestParam(required = false, defaultValue = \"null\")"))
+                                .type("String")
+                                .name("name")
+                                .build(),
+                        PropertyModel.builder()
+                                .keywords(Collections.singletonList("@RequestParam(required = false, defaultValue = \".java\")"))
+                                .type("String")
+                                .name("extension")
+                                .build(),
+                        PropertyModel.builder()
+                                .keywords(Collections.singletonList("@RequestParam(required = false)"))
+                                .type("String")
+                                .name("user")
+                                .build()))
+                .exceptions(Arrays.asList("Exception", "IOException"))
+                .statements(createExpectedStatements())
+                .build();
     }
 
-    private void doPrintMethodLOC(MethodModel methodModel) {
-        Optional<Long> loc = Optional.ofNullable(methodModel.getLoc());
+    private List<StatementModel> createExpectedStatements() {
+        List<StatementModel> statements = new ArrayList<>();
 
-        if (loc.isPresent())
-            System.out.print(" --> LOC : " + methodModel.getLoc());
+        statements.add(createFirstStatement());
+        statements.add(createSecondStatement());
+
+        return statements;
     }
 
-    private void doPrintMethodCodeSmells(MethodModel methodModel) {
-        Integer maxSize = methodModel.getCodeSmells().size() - ONE;
+    private StatementModel createFirstStatement() {
+        BlockModel blockModel = BlockModel.blockBuilder()
+                .build();
+        blockModel.setStatement("try {");
+        blockModel.setStartIndex(9);
+        blockModel.setEndIndex(13);
+        blockModel.getStatements()
+                .add(createFirstBlockStatement());
+        blockModel.setEndOfBlockStatement(createFirstBlockEndStatement());
 
-        if (!methodModel.getCodeSmells().isEmpty())
-            doPrintWithSpace(" --> Smells :");
-
-        for (Integer index = FIRST_INDEX; index < methodModel.getCodeSmells().size(); index++)
-            doPrintMethodCodeSmell(methodModel.getCodeSmells().get(index), index, maxSize);
+        return blockModel;
     }
 
-    private void doPrintMethodCodeSmell(CodeSmellName codeSmellName, Integer index, Integer maxSize) {
-        System.out.print(codeSmellName);
-        doPrintCommaSeparator(index, maxSize);
+    private StatementModel createFirstBlockStatement() {
+        return StatementModel.statementBuilder()
+                .statement("return user + \"-\" + name + extension;")
+                .startIndex(27)
+                .endIndex(63)
+                .build();
     }
 
-    private void doPrintWithSpace(String text) {
-        System.out.print(text + " ");
+    private StatementModel createFirstBlockEndStatement() {
+        return StatementModel.statementBuilder()
+                .statement("}")
+                .startIndex(73)
+                .endIndex(73)
+                .build();
     }
 
-    private void doPrintSeparator() {
-        System.out.println("------------------------------------------------------------------------");
-        System.out.println();
+    private StatementModel createSecondStatement() {
+        BlockModel blockModel = BlockModel.blockBuilder()
+                .build();
+        blockModel.setStatement("catch (NullPointerException e) {");
+        blockModel.setStartIndex(75);
+        blockModel.setEndIndex(106);
+        blockModel.getStatements()
+                .add(createSecondBlockStatement());
+        blockModel.setEndOfBlockStatement(createSecondBlockEndStatement());
+
+        return blockModel;
+    }
+
+    private StatementModel createSecondBlockStatement() {
+        return StatementModel.statementBuilder()
+                .statement("return null;")
+                .startIndex(120)
+                .endIndex(131)
+                .build();
+    }
+
+    private StatementModel createSecondBlockEndStatement() {
+        return StatementModel.statementBuilder()
+                .statement("}")
+                .startIndex(141)
+                .endIndex(141)
+                .build();
+    }
+
+    private Map<String, Map<String, List<MethodModel>>> createExpectedResult() {
+        Map<String, Map<String, List<MethodModel>>> result = new HashMap<>();
+        result.put(paths.get(FIRST_INDEX), createMethodsDetectionReturn());
+
+        return result;
+    }
+
+    private void verifyFilesDetection() {
+        verify(filesDetection, times(INVOKED_ONCE))
+                .detect(eq(paths), eq(mimeType));
+        verifyNoMoreInteractions(filesDetection);
+    }
+
+    private void verifyMethodsDetection() {
+        verify(methodsDetection, times(INVOKED_ONCE))
+                .detect(eq(createFileModels()));
+        verifyNoMoreInteractions(methodsDetection);
+    }
+
+    private void verifyCodeSmellsDetection() {
+        verify(codeSmellsDetection, times(INVOKED_ONCE))
+                .detect(eq(createMethodModels()));
+        verifyNoMoreInteractions(codeSmellsDetection);
     }
 }
